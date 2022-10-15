@@ -36,6 +36,8 @@
 #include <iterator>
 #include <map>
 #include <unordered_set>
+#include <string>
+#include <unistd.h>
 
 /*
 #if HAVE_FILESYSTEM
@@ -143,6 +145,49 @@ namespace fs = std::filesystem;
 namespace fs = std::experimental::filesystem;
 #endif
 */
+const uint64_t r_kUsToS = 1000000;
+
+uint64_t Runtime_getTimeStamp() {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return tv.tv_sec * r_kUsToS + tv.tv_usec;
+}
+
+uint64_t start, elapsed1, elapsed2;
+
+void kill_handler (int param)
+{
+  elapsed1 = Runtime_getTimeStamp() - start;
+  std::ifstream infile;
+  std::ofstream outfile;
+  if (access("/tmp/symcc_recording", F_OK)) {
+    std::cerr << "/tmp/symcc_recording not exists! Creating one\n";
+    outfile.open("/tmp/symcc_recording", std::ios::trunc);
+    outfile << 0 << std::endl;
+    outfile.setf(std::ios::fixed, std::ios::floatfield);
+    outfile << elapsed1 << std::endl;
+    outfile.close();
+  }
+  else {
+    std::cerr << "/tmp/symcc_recording found!\n";
+    infile.open("/tmp/symcc_recording");
+    std::string s_round, s_e_sum;
+    std::getline(infile, s_round);
+    std::getline(infile, s_e_sum);
+    infile.close();
+    std::cerr << "Getline s_round => " << s_round << std::endl;
+    std::cerr << "Getline s_e_sum => " << s_e_sum << std::endl;
+
+    uint64_t round = atol(s_round.c_str());
+    uint64_t e_sum = atol(s_e_sum.c_str());
+
+    outfile.open("/tmp/symcc_recording", std::ios::trunc);
+    outfile << round + 1 << std::endl;
+    outfile.setf(std::ios::fixed, std::ios::floatfield);
+    outfile << e_sum + elapsed1 << std::endl;
+    outfile.close();
+  }
+}
 
 static int dtor_done = 0;
 
@@ -233,6 +278,7 @@ void __dtor_runtime(void) {
 
         std::cerr << "Done going through the counters\n";
   }
+  kill_handler(0);
     exit(0);
 }
 
@@ -243,6 +289,7 @@ void _sym_initialize(void) {
 
   loadConfig();
   initLibcWrappers();
+  start = Runtime_getTimeStamp();
   std::cerr << "This is SymCC running with the QSYM backend" << std::endl;
   if (g_config.fullyConcrete) {
     std::cerr
